@@ -1,3 +1,21 @@
+/* tetris-term - Classic Tetris for your terminal.
+ *
+ * Copyright (C) 2014 Gjum
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -256,9 +274,24 @@ char getchar_fancy() { // {{{
 	return c;
 } // }}}
 
+void welcome() {
+	printf("tetris-term  Copyright (C) 2014  Gjum\n");
+	printf("\n");
+	printf("This program comes with ABSOLUTELY NO WARRANTY.\n");
+	printf("This is free software, and you are welcome to redistribute it\n");
+	printf("under certain conditions; see `LICENSE' for details.\n");
+	printf("\n");
+	printf("Controls:\n");
+	printf("<a>          move brick left\n");
+	printf("<d>          move brick right\n");
+	printf("<s>          rotate brick clockwise\n");
+	printf("<w>, <Space> drop brick down\n");
+	printf("\n");
+}
+
 int main(int argc, char **argv) { // {{{
 	srand(getpid());
-	printf("Welcome.\n");
+	welcome();
 	TetrisGame *game = newTetrisGame(10, 20);
 	while (game->isRunning) {
 		tick(game);
