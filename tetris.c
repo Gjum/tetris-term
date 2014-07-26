@@ -86,10 +86,17 @@ typedef struct { // TetrisGame {{{
 	unsigned int width, height, size; // of the board
 	unsigned char *board; // indices of pattern
 	FallingBrick brick, nextBrick;
-	unsigned char isRunning;
+	unsigned char isRunning, isPaused;
 	clock_t sleepClocks, sleepsBeforeFast, nextTick;
 	unsigned long score;
 } TetrisGame; // }}}
+
+void dieIfOutOfMemory(void *pointer) { // {{{
+	if (pointer == NULL) {
+		printf("Error: Out of memory\n");
+		exit(1);
+	}
+} // }}}
 
 void nextBrick(TetrisGame *game) { // {{{
 	game->brick = game->nextBrick;
@@ -104,11 +111,14 @@ void nextBrick(TetrisGame *game) { // {{{
 
 TetrisGame *newTetrisGame(unsigned int width, unsigned int height) { // {{{
 	TetrisGame *game = malloc(sizeof(TetrisGame));
+	dieIfOutOfMemory(game);
 	game->width = width;
 	game->height = height;
 	game->size = width * height;
 	game->board = calloc(game->size, sizeof(char));
+	dieIfOutOfMemory(game->board);
 	game->isRunning = 1;
+	game->isPaused  = 0;
 	game->sleepClocks = CLOCKS_PER_SEC / 2 / 150; // TODO fit with usleep() in main loop
 	game->sleepsBeforeFast = game->sleepClocks;
 	game->nextTick = clock() + game->sleepClocks;
@@ -239,10 +249,19 @@ void tick(TetrisGame *game) { // {{{
 	printBoard(game);
 } // }}}
 
-void moveBrick(TetrisGame *game, char direction) { // {{{
-	game->brick.x += direction;
-	if (brickCollides(game))
-		game->brick.x -= direction;
+void pauseUnpause(TetrisGame *game) { // {{{
+	if (game->isPaused)
+		game->nextTick = clock();
+	game->isPaused ^= 1;
+} // }}}
+
+void moveBrick(TetrisGame *game, char x, char y) { // {{{
+	game->brick.x += x;
+	game->brick.y += y;
+	if (brickCollides(game)) {
+		game->brick.x -= x;
+		game->brick.y -= y;
+	}
 	printBoard(game);
 } // }}}
 
@@ -262,30 +281,22 @@ void dropBrick(TetrisGame *game) { // {{{
 	game->nextTick = clock() + game->sleepClocks;
 } // }}}
 
-void keyPressed(TetrisGame *game, char c) { // {{{
-	switch (c) {
-		case 'q': game->isRunning = 0;  break;
-		case 'a': moveBrick(game, -1);  break;
-		case 'd': moveBrick(game, 1);   break;
-		case 's': rotateBrick(game, 1); break;
-		case 'w':
-		case ' ': dropBrick(game);      break;
+void processInputs(TetrisGame *game) { // {{{
+	switch (getchar()) {
+		case ' ': moveBrick(game, 0, 1); break;
+		//case '?': dropBrick(game); break;
+		case 'p': pauseUnpause(game); break;
+		case 'q': game->isRunning = 0; break;
+		case 27: // ESC
+			getchar();
+			switch (getchar()) {
+				case 'A': rotateBrick(game,  1);  break; // up
+				case 'B': rotateBrick(game, -1);  break; // down
+				case 'C': moveBrick(game,  1, 0); break; // right
+				case 'D': moveBrick(game, -1, 0); break; // left
+			}
+			break;
 	}
-} // }}}
-
-char getchar_fancy() { // {{{
-	// Init terminal for non-blocking & noecho getchar()
-	struct termios term, term_orig;
-	tcgetattr(STDIN_FILENO, &term);
-	tcgetattr(STDIN_FILENO, &term_orig);
-	term.c_lflag &= ~(ICANON|ECHO);
-	term.c_cc[VTIME] = 0;
-	term.c_cc[VMIN] = 0;
-	tcsetattr(STDIN_FILENO, TCSANOW, &term);
-	usleep(10000);
-	char c = getchar();
-	tcsetattr(STDIN_FILENO, TCSANOW, &term_orig);
-	return c;
 } // }}}
 
 void welcome() { // {{{
@@ -296,10 +307,14 @@ void welcome() { // {{{
 	printf("under certain conditions; see `LICENSE' for details.\n");
 	printf("\n");
 	printf("Controls:\n");
-	printf("<a>          move brick left\n");
-	printf("<d>          move brick right\n");
-	printf("<s>          rotate brick clockwise\n");
-	printf("<w>, <Space> drop brick down\n");
+	printf("<Left>  move brick left\n");
+	printf("<Right> move brick right\n");
+	printf("<Up>    rotate brick clockwise\n");
+	printf("<Down>  rotate brick counter-clockwise\n");
+	//printf("<?????> drop brick down\n");
+	printf("<Space> move brick down by one step\n");
+	printf("<p>     pause game\n");
+	printf("<q>     quit game\n");
 	printf("\n");
 } // }}}
 
@@ -307,12 +322,21 @@ int main(int argc, char **argv) { // {{{
 	srand(getpid());
 	welcome();
 	TetrisGame *game = newTetrisGame(10, 20);
+	// Init terminal for non-blocking & noecho getchar()
+	struct termios term_orig, term;
+	tcgetattr(STDIN_FILENO, &term_orig);
+	tcgetattr(STDIN_FILENO, &term);
+	term.c_lflag &= ~(ICANON|ECHO);
+	term.c_cc[VTIME] = 0;
+	term.c_cc[VMIN] = 0;
+	tcsetattr(STDIN_FILENO, TCSANOW, &term);
 	while (game->isRunning) {
-		tick(game);
-		while (game->nextTick > clock() && game->isRunning) {
-			keyPressed(game, getchar_fancy());
-		}
+		if (game->nextTick < clock() && !game->isPaused)
+			tick(game);
+		usleep(10000);
+		processInputs(game);
 	}
+	tcsetattr(STDIN_FILENO, TCSANOW, &term_orig);
 	printf("Your score: %i\n", game->score);
 	printf("Game over.\n");
 	destroyTetrisGame(game);

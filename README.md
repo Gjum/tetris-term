@@ -12,10 +12,13 @@ Usage
 
 ### Controls:
 
-- `a`: move brick left
-- `d`: move brick right
-- `s`: rotate brick clockwise
-- `w` or `Space`: drop brick down
+ - `Left`:  move brick left
+ - `Right`: move brick right
+ - `Up`:    rotate brick clockwise
+ - `Down`:  rotate brick counter-clockwise
+ - `Space`: move brick down by one step
+ - `p`:     pause game
+ - `q`:     quit game
 
 Features
 --------
