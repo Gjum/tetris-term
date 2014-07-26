@@ -24,7 +24,7 @@
 #include <unistd.h>
 
 // {{{ bricks
-#define numBrickTypes 5 // 7 TODO
+#define numBrickTypes 7
 // positions of the filled cells
 //  0  1  2  3
 //  4  5  6  7
@@ -62,17 +62,17 @@ const unsigned char bricks[numBrickTypes][4][4] = {
 		{ 2,  5,  6,  9},
 		{ 0,  1,  5,  6},
 	},
-	{ // J TODO
-		{ 0,  3, 12, 15},
-		{ 0,  3, 12, 15},
-		{ 0,  3, 12, 15},
-		{ 0,  3, 12, 15},
+	{ // J
+		{ 2,  6,  9, 10},
+		{ 5,  9, 10, 11},
+		{ 5,  6,  9, 13},
+		{ 4,  5,  6, 10},
 	},
-	{ // L TODO
-		{ 0,  3, 12, 15},
-		{ 0,  3, 12, 15},
-		{ 0,  3, 12, 15},
-		{ 0,  3, 12, 15},
+	{ // L
+		{ 1,  5,  9, 10},
+		{ 5,  6,  7,  9},
+		{ 5,  6, 10, 14},
+		{ 6,  8,  9, 10},
 	},
 };
 // }}}
@@ -85,19 +85,21 @@ typedef struct { // FallingBrick {{{
 typedef struct { // TetrisGame {{{
 	unsigned int width, height, size; // of the board
 	unsigned char *board; // indices of pattern
-	FallingBrick brick;
-	unsigned char nextBrick, isRunning;
+	FallingBrick brick, nextBrick;
+	unsigned char isRunning;
 	clock_t sleepClocks, sleepsBeforeFast, nextTick;
 	unsigned long score;
 } TetrisGame; // }}}
 
 void nextBrick(TetrisGame *game) { // {{{
-	game->brick.type = game->nextBrick;
-	game->brick.rotation = rand() % 4;
-	game->brick.color = rand() % 7 + 1; // 1..7
+	game->brick = game->nextBrick;
 	game->brick.x = game->width/2 - 2;
 	game->brick.y = 0;
-	game->nextBrick = rand() % numBrickTypes;
+	game->nextBrick.type = rand() % numBrickTypes;
+	game->nextBrick.rotation = rand() % 4;
+	game->nextBrick.color = rand() % 7 + 1; // 1..7
+	game->nextBrick.x = 0;
+	game->nextBrick.y = 0;
 } // }}}
 
 TetrisGame *newTetrisGame(unsigned int width, unsigned int height) { // {{{
@@ -106,9 +108,8 @@ TetrisGame *newTetrisGame(unsigned int width, unsigned int height) { // {{{
 	game->height = height;
 	game->size = width * height;
 	game->board = calloc(game->size, sizeof(char));
-	game->nextBrick = -1;
 	game->isRunning = 1;
-	game->sleepClocks = CLOCKS_PER_SEC / 2 / 200; // TODO fit with usleep() in main loop
+	game->sleepClocks = CLOCKS_PER_SEC / 2 / 150; // TODO fit with usleep() in main loop
 	game->sleepsBeforeFast = game->sleepClocks;
 	game->nextTick = clock() + game->sleepClocks;
 	nextBrick(game); // fill preview
@@ -141,19 +142,32 @@ void printBoard(TetrisGame *game) { // {{{
 	memset(line, '-', width * 2);
 	line[width * 2] = 0;
 	printf("\e7\e[H"); // save position, move to 0,0
-	printf(" / Brick: %i Next: %i \\ \n", game->brick.type, game->nextBrick);
-	printf("/%s\\\n", line);
-	for (int y = 0; y < game->size; y += width) {
+	printf("/%s+--------\\\n", line);
+	int foo = 0;
+	for (int y = 0; y < game->height; y++) {
 		printf("|");
-		for (int i = y; i < y+width; i++) {
-			char c = game->board[i];
+		for (int x = 0; x < game->width; x++) {
+			char c = game->board[x + y * game->width];
 			if (c == 0) // empty? try falling brick
-				c = colorOfBrickAt(&game->brick, i%width, i/width);
+				c = colorOfBrickAt(&game->brick, x, y);
 			printf("\e[3%i;4%im  ", c, c);
 		}
-		printf("\e[39;49m|\n");
+		if (y == 4)      printf("\e[39;49m|  Score |\n");
+		else if (y == 5) printf("\e[39;49m| %6i |\n", game->score);
+		else if (y == 6) printf("\e[39;49m+--------/\n");
+		else {
+			if (y < 4) {
+				printf("\e[39;49m|");
+				for (int x = 0; x < 4; x++) {
+					char c = colorOfBrickAt(&game->nextBrick, x, y);
+					printf("\e[3%i;4%im  ", c, c);
+				}
+				foo++;
+			}
+			printf("\e[39;49m|\n");
+		}
 	}
-	printf("\\%s/\n", line);
+	printf("\\%s/a%ia\n", line, foo);
 	printf("\e8"); // move back to original position
 } // }}}
 
@@ -274,7 +288,7 @@ char getchar_fancy() { // {{{
 	return c;
 } // }}}
 
-void welcome() {
+void welcome() { // {{{
 	printf("tetris-term  Copyright (C) 2014  Gjum\n");
 	printf("\n");
 	printf("This program comes with ABSOLUTELY NO WARRANTY.\n");
@@ -287,7 +301,7 @@ void welcome() {
 	printf("<s>          rotate brick clockwise\n");
 	printf("<w>, <Space> drop brick down\n");
 	printf("\n");
-}
+} // }}}
 
 int main(int argc, char **argv) { // {{{
 	srand(getpid());
@@ -299,6 +313,7 @@ int main(int argc, char **argv) { // {{{
 			keyPressed(game, getchar_fancy());
 		}
 	}
+	printf("Your score: %i\n", game->score);
 	printf("Game over.\n");
 	destroyTetrisGame(game);
 	return 0;

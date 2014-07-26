@@ -26,10 +26,8 @@ Features
 
 ### Roadmap:
 
-- J and L shapes
-- score system
+- use shape rotations from classic Tetris
 - better timer
-- next shape preview
 
 License
 -------
