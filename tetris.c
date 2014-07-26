@@ -129,6 +129,8 @@ TetrisGame *newTetrisGame(unsigned int width, unsigned int height) { // {{{
 
 void destroyTetrisGame(TetrisGame *game) { // {{{
 	if (game == NULL) return;
+	printf("Your score: %i\n", game->score);
+	printf("Game over.\n");
 	free(game->board);
 	free(game);
 } // }}}
@@ -151,7 +153,7 @@ void printBoard(TetrisGame *game) { // {{{
 	char line[width * 2 + 1];
 	memset(line, '-', width * 2);
 	line[width * 2] = 0;
-	printf("\e7\e[H"); // save position, move to 0,0
+	printf("\e[%iA", game->height + 2); // move to above the board
 	printf("/%s+--------\\\n", line);
 	int foo = 0;
 	for (int y = 0; y < game->height; y++) {
@@ -162,7 +164,7 @@ void printBoard(TetrisGame *game) { // {{{
 				c = colorOfBrickAt(&game->brick, x, y);
 			printf("\e[3%i;4%im  ", c, c);
 		}
-		if (y == 4)      printf("\e[39;49m|  Score |\n");
+		if (y == 4) printf("\e[39;49m|  \e[1mScore\e[0m |\n");
 		else if (y == 5) printf("\e[39;49m| %6i |\n", game->score);
 		else if (y == 6) printf("\e[39;49m+--------/\n");
 		else {
@@ -177,8 +179,7 @@ void printBoard(TetrisGame *game) { // {{{
 			printf("\e[39;49m|\n");
 		}
 	}
-	printf("\\%s/a%ia\n", line, foo);
-	printf("\e8"); // move back to original position
+	printf("\\%s/\n", line);
 } // }}}
 
 char brickCollides(TetrisGame *game) { // {{{
@@ -306,7 +307,7 @@ void welcome() { // {{{
 	printf("This is free software, and you are welcome to redistribute it\n");
 	printf("under certain conditions; see `LICENSE' for details.\n");
 	printf("\n");
-	printf("Controls:\n");
+	printf("\e[1mControls:\e[0m\n");
 	printf("<Left>  move brick left\n");
 	printf("<Right> move brick right\n");
 	printf("<Up>    rotate brick clockwise\n");
@@ -330,6 +331,9 @@ int main(int argc, char **argv) { // {{{
 	term.c_cc[VTIME] = 0;
 	term.c_cc[VMIN] = 0;
 	tcsetattr(STDIN_FILENO, TCSANOW, &term);
+	// create space for the board
+	for (int i = 0; i < game->height + 2; i++) printf("\n");
+	printBoard(game);
 	while (game->isRunning) {
 		if (game->nextTick < clock() && !game->isPaused)
 			tick(game);
@@ -337,8 +341,6 @@ int main(int argc, char **argv) { // {{{
 		processInputs(game);
 	}
 	tcsetattr(STDIN_FILENO, TCSANOW, &term_orig);
-	printf("Your score: %i\n", game->score);
-	printf("Game over.\n");
 	destroyTetrisGame(game);
 	return 0;
 } // }}}
