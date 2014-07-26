@@ -29,7 +29,6 @@ Features
 
 ### Roadmap:
 
-- use shape rotations from classic Tetris
 - better timer
 
 License
