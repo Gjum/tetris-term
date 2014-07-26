@@ -1,3 +1,5 @@
+![Screenshot](https://github.com/Gjum/tetris-term/blob/master/screenshot.png)
+
 tetris-term
 ===========
 
@@ -30,6 +32,7 @@ Features
 ### Roadmap:
 
 - better timer
+- changing speed
 
 License
 -------
