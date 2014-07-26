@@ -238,6 +238,7 @@ void clearFullRows(TetrisGame *game) { // {{{
 } // }}}
 
 void tick(TetrisGame *game) { // {{{
+	if (game->isPaused) return;
 	game->nextTick += game->sleepClocks;
 	game->brick.y++;
 	if (brickCollides(game)) {
@@ -257,6 +258,7 @@ void pauseUnpause(TetrisGame *game) { // {{{
 } // }}}
 
 void moveBrick(TetrisGame *game, char x, char y) { // {{{
+	if (game->isPaused) return;
 	game->brick.x += x;
 	game->brick.y += y;
 	if (brickCollides(game)) {
@@ -267,6 +269,7 @@ void moveBrick(TetrisGame *game, char x, char y) { // {{{
 } // }}}
 
 void rotateBrick(TetrisGame *game, char direction) { // {{{
+	if (game->isPaused) return;
 	unsigned char oldRotation = game->brick.rotation;
 	game->brick.rotation += 4 + direction; // 4: keep it positive
 	game->brick.rotation %= 4;
@@ -276,6 +279,7 @@ void rotateBrick(TetrisGame *game, char direction) { // {{{
 } // }}}
 
 void dropBrick(TetrisGame *game) { // {{{
+	if (game->isPaused) return;
 	if (game->sleepsBeforeFast != game->sleepClocks) return; // only speed up once
 	game->sleepsBeforeFast = game->sleepClocks;
 	game->sleepClocks /= 5;
