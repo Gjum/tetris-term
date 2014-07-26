@@ -5,8 +5,6 @@
 #include <time.h>
 #include <unistd.h>
 
-char *pattern = " #X:|EEEEEEEEEEEE";
-
 // {{{ bricks
 #define numBrickTypes 5 // 7 TODO
 // positions of the filled cells
@@ -62,7 +60,7 @@ const unsigned char bricks[numBrickTypes][4][4] = {
 // }}}
 
 typedef struct { // FallingBrick {{{
-	unsigned char type, rotation;
+	unsigned char type, rotation, color;
 	int x, y;
 } FallingBrick; // }}}
 
@@ -78,6 +76,7 @@ typedef struct { // TetrisGame {{{
 void nextBrick(TetrisGame *game) { // {{{
 	game->brick.type = game->nextBrick;
 	game->brick.rotation = rand() % 4;
+	game->brick.color = rand() % 7 + 1; // 1..7
 	game->brick.x = game->width/2 - 2;
 	game->brick.y = 0;
 	game->nextBrick = rand() % numBrickTypes;
@@ -105,7 +104,7 @@ void destroyTetrisGame(TetrisGame *game) { // {{{
 	free(game);
 } // }}}
 
-unsigned char isBrickOccupying(FallingBrick *brick, unsigned int x, unsigned int y) { // {{{
+unsigned char colorOfBrickAt(FallingBrick *brick, int x, int y) { // {{{
 	if (brick->type < 0) return 0;
 	int v = y - brick->y;
 	if (v < 0 || v >= 4) return 0;
@@ -113,7 +112,7 @@ unsigned char isBrickOccupying(FallingBrick *brick, unsigned int x, unsigned int
 	if (u < 0 || u >= 4) return 0;
 	for (int i = 0; i < 4; i++) {
 		if (u + 4*v == bricks[brick->type][brick->rotation][i])
-			return 1;
+			return brick->color;
 	}
 	return 0;
 } // }}}
@@ -131,11 +130,10 @@ void printBoard(TetrisGame *game) { // {{{
 		for (int i = y; i < y+width; i++) {
 			char c = game->board[i];
 			if (c == 0) // empty? try falling brick
-				c = isBrickOccupying(&game->brick, i%width, i/width);
-			c = pattern[c];
-			printf("%c%c", c, c);
+				c = colorOfBrickAt(&game->brick, i%width, i/width);
+			printf("\e[3%i;4%im  ", c, c);
 		}
-		printf("|\n");
+		printf("\e[39;49m|\n");
 	}
 	printf("\\%s/\n", line);
 	printf("\e8"); // move back to original position
@@ -149,9 +147,8 @@ char brickCollides(TetrisGame *game) { // {{{
 		int y = p / 4 + game->brick.y;
 		if (y >= game->height) return 1;
 		p = x + y * game->width;
-		if (p >= 0 && p < game->size && game->board[p] != 0) {
+		if (p >= 0 && p < game->size && game->board[p] != 0)
 			return 1;
-		}
 	}
 	return 0;
 } // }}}
@@ -163,7 +160,7 @@ void landBrick(TetrisGame *game) { // {{{
 		int x = p % 4 + game->brick.x;
 		int y = p / 4 + game->brick.y;
 		p = x + y * game->width;
-		game->board[p] = 1;
+		game->board[p] = game->brick.color;
 	}
 	game->sleepClocks = game->sleepsBeforeFast;
 	nextBrick(game);
@@ -212,9 +209,8 @@ void tick(TetrisGame *game) { // {{{
 
 void moveBrick(TetrisGame *game, char direction) { // {{{
 	game->brick.x += direction;
-	if (brickCollides(game)) {
+	if (brickCollides(game))
 		game->brick.x -= direction;
-	}
 	printBoard(game);
 } // }}}
 
@@ -222,10 +218,8 @@ void rotateBrick(TetrisGame *game, char direction) { // {{{
 	unsigned char oldRotation = game->brick.rotation;
 	game->brick.rotation += 4 + direction; // 4: keep it positive
 	game->brick.rotation %= 4;
-	if (brickCollides(game)) {
+	if (brickCollides(game))
 		game->brick.rotation = oldRotation;
-		printf("rotateBrick failed\n");
-	}
 	printBoard(game);
 } // }}}
 
@@ -234,14 +228,6 @@ void dropBrick(TetrisGame *game) { // {{{
 	game->sleepsBeforeFast = game->sleepClocks;
 	game->sleepClocks /= 5;
 	game->nextTick = clock() + game->sleepClocks;
-//	while (1) {
-//		game->brick.y++;
-//		if (brickCollides(game)) {
-//			game->brick.y--;
-//			break;
-//		}
-//	}
-//	printBoard(game);
 } // }}}
 
 void keyPressed(TetrisGame *game, char c) { // {{{
