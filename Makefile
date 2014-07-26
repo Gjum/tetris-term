@@ -1,10 +1,14 @@
-run: tetris
-	@./tetris
+APPNAME=tetris-term
+CC=gcc
+CFLAGS= --std=gnu99 -O3
 
-tetris: tetris.c
-	@gcc --std=gnu99 -o $@ $^ -g
+run: ${APPNAME}
+	@./${APPNAME}
+
+${APPNAME}: tetris.c
+	@${CC} -o $@ $^ ${CFLAGS}
 
 .PHONY: clean
 clean:
-	@rm -f tetris
+	@rm -f ${APPNAME}
 
