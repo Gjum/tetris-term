@@ -104,7 +104,7 @@ void nextBrick(TetrisGame *game) { // {{{
 	game->brick.y = 0;
 	game->nextBrick.type = rand() % numBrickTypes;
 	game->nextBrick.rotation = rand() % 4;
-	game->nextBrick.color = rand() % 7 + 1; // 1..7
+	game->nextBrick.color = game->brick.color % 7 + 1; // (color-1 + 1) % 7 + 1, range is 1..7
 	game->nextBrick.x = 0;
 	game->nextBrick.y = 0;
 } // }}}
