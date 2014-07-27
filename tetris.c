@@ -204,14 +204,12 @@ void landBrick(TetrisGame *game) { // {{{
 		p = x + y * game->width;
 		game->board[p] = game->brick.color;
 	}
-	nextBrick(game);
 } // }}}
 
 void clearFullRows(TetrisGame *game) { // {{{
-	// TODO optimize, only look at landed brick
 	int width = game->width;
 	int rowsCleared = 0;
-	for (int y = 0; y < game->height; y++) {
+	for (int y = game->brick.y; y < game->brick.y + 4; y++) {
 		char clearRow = 1;
 		for (int x = 0; x < width; x++) {
 			if (0 == game->board[x + y * width]) {
@@ -220,10 +218,9 @@ void clearFullRows(TetrisGame *game) { // {{{
 			}
 		}
 		if (clearRow) {
-			for (int d = y; d > 0; d--) {
+			for (int d = y; d > 0; d--)
 				memcpy(game->board + width*d, game->board + width*(d-1), width);
-			}
-			bzero(game->board, width);
+			bzero(game->board, width); // delete first line
 			y--;
 			rowsCleared++;
 		}
@@ -242,6 +239,7 @@ void tick(TetrisGame *game) { // {{{
 		game->brick.y--;
 		landBrick(game);
 		clearFullRows(game);
+		nextBrick(game);
 		if (brickCollides(game))
 			game->isRunning = 0;
 	}
