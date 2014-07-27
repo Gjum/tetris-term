@@ -31,8 +31,8 @@ Features
 
 ### Roadmap:
 
-- better timer
 - changing speed
+- more controls
 
 License
 -------
