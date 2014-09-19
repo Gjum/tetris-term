@@ -16,12 +16,12 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "tetris.h"
+
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <termios.h>
-#include <sys/time.h>
 #include <unistd.h>
 
 // {{{ bricks
@@ -33,77 +33,24 @@
 // 12 13 14 15
 // [brickNr][rotation][cellNr]
 const unsigned char bricks[numBrickTypes][4][4] = {
-	{ // I
-		{ 1,  5,  9, 13},
-		{ 8,  9, 10, 11},
-		{ 1,  5,  9, 13},
-		{ 8,  9, 10, 11},
-	},
-	{ // O
-		{ 5,  6,  9, 10},
-		{ 5,  6,  9, 10},
-		{ 5,  6,  9, 10},
-		{ 5,  6,  9, 10},
-	},
-	{ // T
-		{ 9,  8,  5, 10},
-		{ 9,  5, 10, 13},
-		{ 9, 10, 13,  8},
-		{ 9, 13,  8,  5},
-	},
-	{ // S
-		{ 9, 10, 12, 13},
-		{ 5,  9, 10, 14},
-		{ 9, 10, 12, 13},
-		{ 5,  9, 10, 14},
-	},
-	{ // Z
-		{ 8,  9, 13, 14},
-		{ 5,  8,  9, 12},
-		{ 8,  9, 13, 14},
-		{ 5,  8,  9, 12},
-	},
-	{ // J
-		{ 5,  9, 12, 13},
-		{ 4,  8,  9, 10},
-		{ 5,  6,  9, 13},
-		{ 8,  9, 10, 14},
-	},
-	{ // L
-		{ 5,  9, 13, 14},
-		{ 8,  9, 10, 12},
-		{ 4,  5,  9, 13},
-		{ 6,  8,  9, 10},
-	},
+	{ { 1,  5,  9, 13}, { 8,  9, 10, 11}, { 1,  5,  9, 13}, { 8,  9, 10, 11}, }, // I
+	{ { 5,  6,  9, 10}, { 5,  6,  9, 10}, { 5,  6,  9, 10}, { 5,  6,  9, 10}, }, // O
+	{ { 9,  8,  5, 10}, { 9,  5, 10, 13}, { 9, 10, 13,  8}, { 9, 13,  8,  5}, }, // T
+	{ { 9, 10, 12, 13}, { 5,  9, 10, 14}, { 9, 10, 12, 13}, { 5,  9, 10, 14}, }, // S
+	{ { 8,  9, 13, 14}, { 5,  8,  9, 12}, { 8,  9, 13, 14}, { 5,  8,  9, 12}, }, // Z
+	{ { 5,  9, 12, 13}, { 4,  8,  9, 10}, { 5,  6,  9, 13}, { 8,  9, 10, 14}, }, // J
+	{ { 5,  9, 13, 14}, { 8,  9, 10, 12}, { 4,  5,  9, 13}, { 6,  8,  9, 10}, }, // L
 };
 // }}}
 
-typedef struct { // FallingBrick {{{
-	unsigned char type, rotation, color;
-	int x, y;
-} FallingBrick; // }}}
-
-typedef struct { // TetrisGame {{{
-	unsigned int width, height, size; // of the board
-	unsigned char *board; // indices of pattern
-	FallingBrick brick, nextBrick;
-	unsigned char isRunning, isPaused;
-	suseconds_t sleepUsec;
-	unsigned long score;
-} TetrisGame; // }}}
-
-struct termios termOrig;
-struct itimerval timer;
-TetrisGame *game;
-
-void dieIfOutOfMemory(void *pointer) { // {{{
+static void dieIfOutOfMemory(void *pointer) { // {{{
 	if (pointer == NULL) {
 		printf("Error: Out of memory\n");
 		exit(1);
 	}
 } // }}}
 
-void nextBrick(TetrisGame *game) { // {{{
+static void nextBrick(TetrisGame *game) { // {{{
 	game->brick = game->nextBrick;
 	game->brick.x = game->width/2 - 2;
 	game->brick.y = 0;
@@ -128,11 +75,32 @@ TetrisGame *newTetrisGame(unsigned int width, unsigned int height) { // {{{
 	game->score = 0;
 	nextBrick(game); // fill preview
 	nextBrick(game); // put into game
+	// init terminal for non-blocking and no-echo getchar()
+	struct termios term;
+	tcgetattr(STDIN_FILENO, &game->termOrig);
+	tcgetattr(STDIN_FILENO, &term);
+	term.c_lflag &= ~(ICANON|ECHO);
+	term.c_cc[VTIME] = 0;
+	term.c_cc[VMIN] = 0;
+	tcsetattr(STDIN_FILENO, TCSANOW, &term);
+	// init signals for timer and errors
+	struct sigaction signalAction;
+	sigemptyset(&signalAction.sa_mask);
+	signalAction.sa_handler = signalHandler;
+	signalAction.sa_flags = 0;
+	sigaction(SIGINT,  &signalAction, NULL);
+	sigaction(SIGTERM, &signalAction, NULL);
+	sigaction(SIGSEGV, &signalAction, NULL);
+	sigaction(SIGALRM, &signalAction, NULL);
+	// init timer
+	game->timer.it_value.tv_usec = game->sleepUsec;
+	setitimer(ITIMER_REAL, &game->timer, NULL);
 	return game;
 } // }}}
 
 void destroyTetrisGame(TetrisGame *game) { // {{{
 	if (game == NULL) return;
+	tcsetattr(STDIN_FILENO, TCSANOW, &game->termOrig);
 	printf("Your score: %i\n", game->score);
 	printf("Game over.\n");
 	free(game->board);
@@ -152,41 +120,7 @@ unsigned char colorOfBrickAt(FallingBrick *brick, int x, int y) { // {{{
 	return 0;
 } // }}}
 
-void printBoard(TetrisGame *game) { // {{{
-	int width = game->width;
-	char line[width * 2 + 1];
-	memset(line, '-', width * 2);
-	line[width * 2] = 0;
-	printf("\e[%iA", game->height + 2); // move to above the board
-	printf("/%s+--------\\\n", line);
-	int foo = 0;
-	for (int y = 0; y < game->height; y++) {
-		printf("|");
-		for (int x = 0; x < game->width; x++) {
-			char c = game->board[x + y * game->width];
-			if (c == 0) // empty? try falling brick
-				c = colorOfBrickAt(&game->brick, x, y);
-			printf("\e[3%i;4%im  ", c, c);
-		}
-		if (y == 4) printf("\e[39;49m|  \e[1mScore\e[0m |\n");
-		else if (y == 5) printf("\e[39;49m| %6i |\n", game->score);
-		else if (y == 6) printf("\e[39;49m+--------/\n");
-		else {
-			if (y < 4) {
-				printf("\e[39;49m|");
-				for (int x = 0; x < 4; x++) {
-					char c = colorOfBrickAt(&game->nextBrick, x, y);
-					printf("\e[3%i;4%im  ", c, c);
-				}
-				foo++;
-			}
-			printf("\e[39;49m|\n");
-		}
-	}
-	printf("\\%s/\n", line);
-} // }}}
-
-char brickCollides(TetrisGame *game) { // {{{
+static char brickCollides(TetrisGame *game) { // {{{
 	for (int i = 0; i < 4; i++) {
 		int p = bricks[game->brick.type][game->brick.rotation][i];
 		int x = p % 4 + game->brick.x;
@@ -200,7 +134,7 @@ char brickCollides(TetrisGame *game) { // {{{
 	return 0;
 } // }}}
 
-void landBrick(TetrisGame *game) { // {{{
+static void landBrick(TetrisGame *game) { // {{{
 	if (game->brick.type < 0) return;
 	for (int i = 0; i < 4; i++) {
 		int p = bricks[game->brick.type][game->brick.rotation][i];
@@ -211,7 +145,7 @@ void landBrick(TetrisGame *game) { // {{{
 	}
 } // }}}
 
-void clearFullRows(TetrisGame *game) { // {{{
+static void clearFullRows(TetrisGame *game) { // {{{
 	int width = game->width;
 	int rowsCleared = 0;
 	for (int y = game->brick.y; y < game->brick.y + 4; y++) {
@@ -251,7 +185,7 @@ void tick(TetrisGame *game) { // {{{
 	printBoard(game);
 } // }}}
 
-void pauseUnpause(TetrisGame *game) { // {{{
+static void pauseUnpause(TetrisGame *game) { // {{{
 	if (game->isPaused) {
 		// TODO de-/reactivate timer
 		tick(game);
@@ -259,7 +193,7 @@ void pauseUnpause(TetrisGame *game) { // {{{
 	game->isPaused ^= 1;
 } // }}}
 
-void moveBrick(TetrisGame *game, char x, char y) { // {{{
+static void moveBrick(TetrisGame *game, char x, char y) { // {{{
 	if (game->isPaused) return;
 	game->brick.x += x;
 	game->brick.y += y;
@@ -270,7 +204,7 @@ void moveBrick(TetrisGame *game, char x, char y) { // {{{
 	printBoard(game);
 } // }}}
 
-void rotateBrick(TetrisGame *game, char direction) { // {{{
+static void rotateBrick(TetrisGame *game, char direction) { // {{{
 	if (game->isPaused) return;
 	unsigned char oldRotation = game->brick.rotation;
 	game->brick.rotation += 4 + direction; // 4: keep it positive
@@ -281,106 +215,23 @@ void rotateBrick(TetrisGame *game, char direction) { // {{{
 } // }}}
 
 void processInputs(TetrisGame *game) { // {{{
-	switch (getchar()) {
-		case ' ': moveBrick(game, 0, 1); break;
-		//case '?': dropBrick(game); break;
-		case 'p': pauseUnpause(game); break;
-		case 'q': game->isRunning = 0; break;
-		case 27: // ESC
-			getchar();
-			switch (getchar()) {
-				case 'A': rotateBrick(game,  1);  break; // up
-				case 'B': rotateBrick(game, -1);  break; // down
-				case 'C': moveBrick(game,  1, 0); break; // right
-				case 'D': moveBrick(game, -1, 0); break; // left
-			}
-			break;
-	}
-} // }}}
-
-void welcome() { // {{{
-	printf("tetris-term  Copyright (C) 2014  Gjum\n");
-	printf("\n");
-	printf("This program comes with ABSOLUTELY NO WARRANTY.\n");
-	printf("This is free software, and you are welcome to redistribute it\n");
-	printf("under certain conditions; see `LICENSE' for details.\n");
-	printf("\n");
-	// Tetris logo
-	printf("\e[30;40m  \e[31;41m  \e[30;40m  \e[34;44m  \e[34;44m  \e[34;44m  \e[33;43m  \e[30;40m  \e[30;40m  \e[30;40m  \e[37;47m  \e[35;45m  \e[35;45m  \e[35;45m  \e[39;49m\n");
-	printf("\e[31;41m  \e[31;41m  \e[31;41m  \e[34;44m  \e[30;40m  \e[35;45m  \e[33;43m  \e[33;43m  \e[33;43m  \e[30;40m  \e[37;47m  \e[35;45m  \e[30;40m  \e[30;40m  \e[39;49m\n");
-	printf("\e[30;40m  \e[36;46m  \e[30;40m  \e[35;45m  \e[35;45m  \e[35;45m  \e[32;42m  \e[30;40m  \e[31;41m  \e[31;41m  \e[37;47m  \e[34;44m  \e[34;44m  \e[34;44m  \e[39;49m\n");
-	printf("\e[30;40m  \e[36;46m  \e[30;40m  \e[34;44m  \e[30;40m  \e[30;40m  \e[32;42m  \e[30;40m  \e[31;41m  \e[30;40m  \e[37;47m  \e[30;40m  \e[30;40m  \e[34;44m  \e[39;49m\n");
-	printf("\e[30;40m  \e[36;46m  \e[36;46m  \e[34;44m  \e[34;44m  \e[34;44m  \e[32;42m  \e[32;42m  \e[31;41m  \e[30;40m  \e[35;45m  \e[35;45m  \e[35;45m  \e[35;45m  \e[39;49m\n");
-	printf("\n");
-	printf("\e[1mControls:\e[0m\n");
-	printf("<Left>  move brick left\n");
-	printf("<Right> move brick right\n");
-	printf("<Up>    rotate brick clockwise\n");
-	printf("<Down>  rotate brick counter-clockwise\n");
-	//printf("<?????> drop brick down\n");
-	printf("<Space> move brick down by one step\n");
-	printf("<p>     pause game\n");
-	printf("<q>     quit game\n");
-	printf("\n");
-} // }}}
-
-void signalHandler(int signal) { // {{{
-	switch(signal) {
-		case SIGINT:
-		case SIGTERM:
-		case SIGSEGV:
-			game->isRunning = 0;
-			break;
-		case SIGALRM:
-			tick(game);
-			timer.it_value.tv_usec = game->sleepUsec;
-			setitimer(ITIMER_REAL, &timer, NULL);
-			break;
-	}
-	return;
-} // }}}
-
-void init() { // {{{
-	// init terminal for non-blocking and no-echo getchar()
-	struct termios term;
-	tcgetattr(STDIN_FILENO, &termOrig);
-	tcgetattr(STDIN_FILENO, &term);
-	term.c_lflag &= ~(ICANON|ECHO);
-	term.c_cc[VTIME] = 0;
-	term.c_cc[VMIN] = 0;
-	tcsetattr(STDIN_FILENO, TCSANOW, &term);
-	// init signals for timer and errors
-	struct sigaction signalAction;
-	sigemptyset(&signalAction.sa_mask);
-	signalAction.sa_handler = signalHandler;
-	signalAction.sa_flags = 0;
-	sigaction(SIGINT,  &signalAction, NULL);
-	sigaction(SIGTERM, &signalAction, NULL);
-	sigaction(SIGSEGV, &signalAction, NULL);
-	sigaction(SIGALRM, &signalAction, NULL);
-	// create space for the board
-	for (int i = 0; i < game->height + 2; i++) printf("\n");
-	// init timer
-	timer.it_value.tv_usec = game->sleepUsec;
-	setitimer(ITIMER_REAL, &timer, NULL);
-} // }}}
-
-void finalize() { // {{{
-	tcsetattr(STDIN_FILENO, TCSANOW, &termOrig);
-} // }}}
-
-int main(int argc, char **argv) { // {{{
-	srand(getpid());
-	welcome();
-	game = newTetrisGame(10, 20);
-	init();
-	printBoard(game);
-	while (game->isRunning) {
-		usleep(50000);
-		processInputs(game);
-	}
-	destroyTetrisGame(game);
-	finalize();
-	return 0;
+	char c = getchar();
+	do {
+		switch (c) {
+			case ' ': moveBrick(game, 0, 1); break;
+			//case '?': dropBrick(game); break;
+			case 'p': pauseUnpause(game); break;
+			case 'q': game->isRunning = 0; break;
+			case 27: // ESC
+				getchar();
+				switch (getchar()) {
+					case 'A': rotateBrick(game,  1);  break; // up
+					case 'B': rotateBrick(game, -1);  break; // down
+					case 'C': moveBrick(game,  1, 0); break; // right
+					case 'D': moveBrick(game, -1, 0); break; // left
+				}
+				break;
+		}
+	} while ((c = getchar()) != -1);
 } // }}}
 
